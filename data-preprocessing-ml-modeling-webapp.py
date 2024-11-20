@@ -292,13 +292,12 @@ def build_ml_model(df, target_column):
             param_grid = {"hidden_layer_sizes": [(50,), (100,)], "activation": ['relu', 'tanh']}
 
     grid_search = GridSearchCV(model, param_grid, cv=5)
-    grid_search.fit(X_train, y_train)
-    st.write(f"Best parameters: {grid_search.best_params_}")
-    model = grid_search.best_estimator_
- 
-    # Fit the model
+
     try:
+        # Fit the model and find the best parameters
         grid_search.fit(X_train, y_train)
+        st.write(f"Best parameters: {grid_search.best_params_}")
+        model = grid_search.best_estimator_
     except Exception as e:
         st.error(f"An error occurred while fitting the model: {e}")
         return
