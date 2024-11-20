@@ -1,6 +1,6 @@
 # Data Preprocessing and Data Visualization and Machine Learning model building and Model Evaluation Web App
 
-A Streamlit-based web application for data preprocessing and machine learning tasks. The app allows users to upload datasets, preprocess data, and train machine learning models (classification and regression). It also includes model evaluation and comparison.
+A Streamlit-based web application for data preprocessing and machine learning tasks. The app allows users to upload datasets, preprocess data, and train machine learning models (classification and regression). It also includes model evaluation and comparison and predictions on new data.
 
 ## Features
 
