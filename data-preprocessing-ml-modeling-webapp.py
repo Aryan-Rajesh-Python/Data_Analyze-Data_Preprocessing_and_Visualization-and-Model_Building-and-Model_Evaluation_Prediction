@@ -22,11 +22,18 @@ from sklearn.decomposition import PCA
 def load_data(uploaded_file):
     try:
         df = pd.read_csv(uploaded_file)
+        if df.empty:
+            st.error("Uploaded file is empty. Please upload a valid CSV file.")
+            return None
         st.write(f"Data loaded successfully with {df.shape[0]} rows and {df.shape[1]} columns.")
         return df
+    except pd.errors.EmptyDataError:
+        st.error("The uploaded file is empty or not in CSV format. Please upload a valid CSV.")
+    except pd.errors.ParserError:
+        st.error("Error parsing the CSV file. Ensure it is properly formatted.")
     except Exception as e:
-        st.error(f"Error: {e}")
-        return None
+        st.error(f"An unexpected error occurred: {e}")
+    return None
 
 # Basic info about the dataset
 def basic_info(df):
@@ -46,10 +53,10 @@ def visualize_columns(df, max_categories=10, figsize=(12, 10)):
     numeric_cols = df.select_dtypes(include=[np.number]).columns
     st.write("### Distribution Plots (Histogram and KDE) for Numeric Columns:")
     for col in numeric_cols:
-        fig, ax = plt.subplots(1, 2, figsize=(figsize[0]*1.5, figsize[1]))  # Increase width of plot
+        fig, ax = plt.subplots(1, 2, figsize=(figsize[0]*1.5, figsize[1]))
         
         # Histogram with larger size
-        ax[0].hist(df[col], bins=20, color='skyblue', edgecolor='black')  # Reduced bins
+        ax[0].hist(df[col], bins=20, color='skyblue', edgecolor='black')
         ax[0].set_title(f"Histogram of {col}")
         ax[0].set_xlabel(col)
         ax[0].set_ylabel('Frequency')
@@ -65,7 +72,7 @@ def visualize_columns(df, max_categories=10, figsize=(12, 10)):
     # Box Plots
     st.write("### Box Plots for Numeric Columns:")
     for col in numeric_cols:
-        fig, ax = plt.subplots(figsize=figsize)  # Increased figure size
+        fig, ax = plt.subplots(figsize=figsize)
         sns.boxplot(x=df[col], ax=ax)
         ax.set_title(f"Boxplot of {col}")
         st.pyplot(fig)
@@ -73,14 +80,14 @@ def visualize_columns(df, max_categories=10, figsize=(12, 10)):
     # Correlation Heatmap
     st.write("### Correlation Heatmap for Numeric Columns:")
     corr_matrix = df[numeric_cols].corr()
-    fig, ax = plt.subplots(figsize=(figsize[0]*1.5, figsize[1]*1.5))  # Increase both width and height for heatmap
+    fig, ax = plt.subplots(figsize=(figsize[0]*1.5, figsize[1]*1.5))
     sns.heatmap(corr_matrix, annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
     st.pyplot(fig)
 
     # Pair Plot (only for numeric columns)
     st.write("### Pair Plot (For Numeric Columns):")
     pair_plot = sns.pairplot(df[numeric_cols])
-    pair_plot.fig.set_size_inches(figsize[0]*1.5, figsize[1]*1.5)  # Adjust pairplot size
+    pair_plot.fig.set_size_inches(figsize[0]*1.5, figsize[1]*1.5)
     st.pyplot(pair_plot.fig)
 
     # Categorical Columns Visualizations
@@ -93,7 +100,7 @@ def visualize_columns(df, max_categories=10, figsize=(12, 10)):
         df_filtered = df[df[col].isin(top_categories)]
         
         # Bar Plot
-        fig, ax = plt.subplots(figsize=figsize)  # Increased figure size for better spacing
+        fig, ax = plt.subplots(figsize=figsize)
         sns.barplot(x=df_filtered[col].value_counts().index, 
                     y=df_filtered[col].value_counts().values, ax=ax)
         ax.set_title(f"Barplot of {col}")
@@ -102,7 +109,7 @@ def visualize_columns(df, max_categories=10, figsize=(12, 10)):
         st.pyplot(fig)
 
         # Count Plot
-        fig, ax = plt.subplots(figsize=figsize)  # Increased figure size
+        fig, ax = plt.subplots(figsize=figsize)
         sns.countplot(x=df_filtered[col], ax=ax)
         ax.set_title(f"Countplot of {col}")
         st.pyplot(fig)
@@ -132,17 +139,19 @@ def detect_outliers(df):
     st.subheader("Outlier Detection")
     numeric_cols = df.select_dtypes(include=[np.number]).columns
     outlier_method = st.selectbox("Select Outlier Detection Method", ["IQR", "None"])
-    
+
+    df_outliers_removed = df.copy()
     if outlier_method == "IQR":
-        Q1 = df[numeric_cols].quantile(0.25)
-        Q3 = df[numeric_cols].quantile(0.75)
+        Q1 = df_outliers_removed[numeric_cols].quantile(0.25)
+        Q3 = df_outliers_removed[numeric_cols].quantile(0.75)
         IQR = Q3 - Q1
-        df_outliers_removed = df[~((df[numeric_cols] < (Q1 - 1.5 * IQR)) | (df[numeric_cols] > (Q3 + 1.5 * IQR))).any(axis=1)]
-        st.write("### Outliers removed using the IQR method.")
+        outliers = ((df_outliers_removed[numeric_cols] < (Q1 - 1.5 * IQR)) | 
+                    (df_outliers_removed[numeric_cols] > (Q3 + 1.5 * IQR))).any(axis=1)
+        df_outliers_removed = df_outliers_removed[~outliers]
+        st.write(f"Outliers removed using the IQR method. {outliers.sum()} rows removed.")
     else:
-        df_outliers_removed = df
-        st.write("### No outlier removal applied.")
-    
+        st.write("No outlier removal applied.")
+
     return df_outliers_removed
 
 # Encode categorical columns
@@ -185,12 +194,13 @@ def build_ml_model(df, target_column):
     # Handle missing values
     if X.isnull().sum().any() or y.isnull().sum() > 0:
         st.warning("The dataset contains missing values. Consider handling them before proceeding.")
-        return
+        return None, None
     
     # Train-test split
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
     # Feature scaling for models that require it
+    scaler = None
     if st.selectbox('Do you want to scale features?', ['No', 'Yes']) == 'Yes':
         scaler = StandardScaler()
         X_train = scaler.fit_transform(X_train)
@@ -218,13 +228,13 @@ def build_ml_model(df, target_column):
     elif model_type == "KNN":
         model = KNeighborsClassifier() if task_type == "classification" else KNeighborsRegressor()
     elif model_type == "Logistic Regression":
-        model = LogisticRegression()  # Logistic Regression for binary/multiclass classification only
+        model = LogisticRegression()
     elif model_type == "Gradient Boosting":
         model = GradientBoostingClassifier() if task_type == "classification" else GradientBoostingRegressor()
     elif model_type == "Linear Regression":
         model = LinearRegression()
     elif model_type == "Naive Bayes":
-        model = GaussianNB() if task_type == "classification" else None  # Naive Bayes for classification
+        model = GaussianNB() if task_type == "classification" else None
     elif model_type == "AdaBoost":
         model = AdaBoostClassifier() if task_type == "classification" else AdaBoostRegressor()
     elif model_type == "CatBoost":
@@ -242,7 +252,7 @@ def build_ml_model(df, target_column):
         
     if model is None:
         st.error("Invalid model type selected.")
-        return
+        return None, None
 
     # Hyperparameter tuning
     param_grid = {}
@@ -263,9 +273,9 @@ def build_ml_model(df, target_column):
         elif model_type == "Gradient Boosting":
             param_grid = {"n_estimators": [50, 100], "learning_rate": [0.01, 0.1]}
         elif model_type == "Linear Regression":
-            pass  # Linear regression doesn't require hyperparameter tuning
+            pass
         elif model_type == "Naive Bayes":
-            pass  # Naive Bayes doesn't require hyperparameter tuning
+            pass
         elif model_type == "AdaBoost":
             param_grid = {"n_estimators": [50, 100, 200]}
         elif model_type == "CatBoost":
@@ -300,7 +310,7 @@ def build_ml_model(df, target_column):
     y_pred = grid_search.predict(X_test)
 
     # Evaluate model performance
-    if task_type == 'classification':  # Classification tasks
+    if task_type == 'classification':
         accuracy = accuracy_score(y_test, y_pred)
         cm = confusion_matrix(y_test, y_pred)
 
@@ -308,14 +318,14 @@ def build_ml_model(df, target_column):
         
         # Classification Report
         class_report = classification_report(y_test, y_pred, output_dict=True)
-        class_report_df = pd.DataFrame(class_report).transpose()  # Convert to DataFrame for better display
+        class_report_df = pd.DataFrame(class_report).transpose()
         
         st.write("### Classification Report:")
-        st.dataframe(class_report_df)  # Display as a table
+        st.dataframe(class_report_df)
 
         # Confusion Matrix
         st.write("### Confusion Matrix:")
-        fig, ax = plt.subplots(figsize=(10, 8))  # Adjust the figure size for clarity
+        fig, ax = plt.subplots(figsize=(10, 8))
         sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", 
                     xticklabels=np.unique(y_test), yticklabels=np.unique(y_test), ax=ax)
         ax.set_xlabel("Predicted Labels")
@@ -342,11 +352,28 @@ def build_ml_model(df, target_column):
         ax.set_ylabel('Predicted Values')
         ax.set_title('Actual vs Predicted')
         st.pyplot(fig)
+        
+    return model, scaler
 
-# Streamlit interface
+# Prediction Function
+def predict_new_data(model, input_data, label_encoders=None, scaler=None):
+    # Apply label encoding to categorical columns
+    if label_encoders:
+        for col, encoder in label_encoders.items():
+            if col in input_data.columns:
+                input_data[col] = encoder.transform(input_data[col].astype(str))
+
+    # Apply feature scaling if a scaler was used
+    if scaler:
+        input_data = scaler.transform(input_data)
+
+    # Generate predictions
+    predictions = model.predict(input_data)
+    return predictions
+
+# Streamlit integration for prediction
 def main():
     st.title("Machine Learning Model Builder and Analyzer")
-    
     uploaded_file = st.file_uploader("Upload your dataset (CSV)", type=["csv"])
     if uploaded_file is not None:
         df = load_data(uploaded_file)
@@ -358,7 +385,23 @@ def main():
             df_encoded, label_encoders = encode_categorical(df_outliers_removed)
             pca_analysis(df_encoded)
             target_column = st.selectbox("Select the target column", df_encoded.columns)
-            build_ml_model(df_encoded, target_column)
+            model, scaler = build_ml_model(df_encoded, target_column)
+            
+            # Allow user to upload new data for prediction
+            st.subheader("Make Predictions on New Data")
+            new_data_file = st.file_uploader("Upload new data for prediction (CSV)", type=["csv"])
+            if new_data_file is not None:
+                new_data = pd.read_csv(new_data_file)
+                st.write("### New Data:")
+                st.dataframe(new_data)
+                
+                try:
+                    # Make predictions
+                    predictions = predict_new_data(model, new_data, label_encoders, scaler)
+                    st.write("### Predictions:")
+                    st.write(predictions)
+                except Exception as e:
+                    st.error(f"Error during prediction: {e}")
 
 if __name__ == "__main__":
     main()
