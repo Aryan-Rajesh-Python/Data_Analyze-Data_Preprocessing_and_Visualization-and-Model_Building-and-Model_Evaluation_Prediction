@@ -10,3 +10,4 @@ A Streamlit-based web application for data preprocessing and machine learning ta
 - **Model Evaluation**: Evaluate with metrics like accuracy, F1 score, RMSE, and R².
 - **Hyperparameter Tuning**: Use GridSearchCV and RandomizedSearchCV for optimization.
 - **Visualization**: Display confusion matrix, ROC curve, and classification report.
+- **Predictions**: Input new data as a csv file directly into the application to make real-time predictions using the trained model.
