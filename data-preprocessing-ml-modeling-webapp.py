@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from sklearn.ensemble import VotingClassifier, StackingClassifier
 from transformers import pipeline
+import io
 
 # Load the dataset
 def load_data(uploaded_file):
@@ -44,9 +45,14 @@ def basic_info(df):
     st.dataframe(df.head())  # Display first 5 rows
     st.write("### Dataset Overview:")
     st.table(df.describe())  # Summary statistics for numeric columns
-    st.write("### Column Types and Missing Values:")
-    st.table(df.info())  # Data types and missing values
-
+    
+    # Capture df.info() output
+    buffer = io.StringIO()
+    df.info(buf=buffer)
+    info = buffer.getvalue()
+    st.text("### Column Types and Missing Values:")
+    st.text(info)
+    
 # Visualize columns
 def visualize_columns(df, max_categories=10, figsize=(12, 10)):
     st.subheader("Column Visualizations")
@@ -275,14 +281,19 @@ def build_ml_model(df, target_column):
             ('gb', GradientBoostingClassifier())
         ], voting='soft')
     elif model_type == "Stacking Classifier":
-        model = StackingClassifier(estimators=[
-            ('rf', RandomForestClassifier()), 
+        base_estimators = [
+            ('rf', RandomForestClassifier(n_estimators=10)), 
             ('svc', SVC(probability=True)), 
             ('gb', GradientBoostingClassifier())
-        ], final_estimator=LogisticRegression())
+        ]
+        model = StackingClassifier(estimators=base_estimators, final_estimator=LogisticRegression())
+        st.write("Default Stacking Classifier configured with Logistic Regression as the meta-model.")
     elif model_type == "NLP Transformer":
-        st.warning("Using a pre-trained transformer model for text classification.")
-        model = pipeline('text-classification', model='distilbert-base-uncased')
+        try:
+            model = pipeline('text-classification', model='distilbert-base-uncased')
+        except Exception as e:
+            st.error(f"Error loading NLP transformer: {e}. Using default configuration.")
+            model = None
         
     if model is None:
         st.error("Invalid model type selected.")
