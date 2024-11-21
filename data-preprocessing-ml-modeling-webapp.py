@@ -1,3 +1,4 @@
+import io
 import pandas as pd
 import numpy as np
 import streamlit as st
@@ -20,7 +21,6 @@ from sklearn.decomposition import PCA
 from sklearn.ensemble import VotingClassifier, StackingClassifier
 from transformers import pipeline
 from sklearn.ensemble import IsolationForest
-import io
 
 # Load the dataset
 def load_data(uploaded_file):
