@@ -31,7 +31,7 @@ The **Machine Learning Model Builder and Analyzer** is an interactive Streamlit 
 ## Requirements
 To run this app, you need the following Python libraries:
 
-streamlit run file.py
+streamlit run file_name.py
 
 - `streamlit`
 - `pandas`
