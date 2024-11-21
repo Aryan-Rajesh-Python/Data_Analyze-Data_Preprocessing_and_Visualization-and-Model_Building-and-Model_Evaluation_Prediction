@@ -5,7 +5,7 @@ from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_sc
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, GradientBoostingClassifier, GradientBoostingRegressor, AdaBoostClassifier, AdaBoostRegressor
 from sklearn.svm import SVC, SVR
-from sklearn.metrics import accuracy_score, mean_squared_error, r2_score, confusion_matrix, classification_report
+from sklearn.metrics import accuracy_score, mean_squared_error, r2_score, confusion_matrix, classification_report, mean_absolute_error
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 import xgboost as xgb
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from sklearn.ensemble import VotingClassifier, StackingClassifier
 from transformers import pipeline
+from sklearn.ensemble import IsolationForest
 import io
 
 # Load the dataset
@@ -50,7 +51,7 @@ def basic_info(df):
     buffer = io.StringIO()
     df.info(buf=buffer)
     info = buffer.getvalue()
-    st.text("### Column Types and Missing Values:")
+    st.write("### Column Types and Missing Values:")
     st.text(info)
     
 # Visualize columns
@@ -126,29 +127,39 @@ def visualize_columns(df, max_categories=10, figsize=(12, 10)):
 def handle_missing_values(df):
     st.subheader("Handle Missing Values")
     st.write("### Choose the method to handle missing values:")
-    missing_method = st.selectbox("Select Method", ["Drop", "Fill Mean", "Fill Median", "Impute"])
+    missing_method = st.selectbox("Select Method", ["Drop", "Fill Mean", "Fill Median", "Fill Mode", "Category-Specific Imputation"])
     
+    # Initialize df_cleaned
+    df_cleaned = df.copy()
+
     if missing_method == "Drop":
-        df_cleaned = df.dropna()
+        df_cleaned = df_cleaned.dropna()
     elif missing_method == "Fill Mean":
-        df_cleaned = df.fillna(df.mean())
+        df_cleaned = df_cleaned.fillna(df_cleaned.mean(numeric_only=True))
     elif missing_method == "Fill Median":
-        df_cleaned = df.fillna(df.median())
-    elif missing_method == "Impute":
-        from sklearn.impute import SimpleImputer
-        imputer = SimpleImputer(strategy="mean")
-        df_cleaned = pd.DataFrame(imputer.fit_transform(df), columns=df.columns)
+        df_cleaned = df_cleaned.fillna(df_cleaned.median(numeric_only=True))
+    elif missing_method == "Fill Mode":
+        for col in df_cleaned.columns:
+            mode = df_cleaned[col].mode()[0]
+            df_cleaned[col].fillna(mode, inplace=True)
+    elif missing_method == "Category-Specific Imputation":
+        for col in df_cleaned.columns:
+            if df_cleaned[col].dtype == 'object':  # Categorical columns
+                df_cleaned[col].fillna(df_cleaned[col].mode()[0], inplace=True)
+            else:  # Numeric columns
+                df_cleaned[col].fillna(df_cleaned[col].mean(), inplace=True)
     
     st.write(f"### Missing values handled using {missing_method}.")
     return df_cleaned
 
 # Detect outliers using IQR
 def detect_outliers(df):
+    
     st.subheader("Outlier Detection")
     numeric_cols = df.select_dtypes(include=[np.number]).columns
-    outlier_method = st.selectbox("Select Outlier Detection Method", ["IQR", "None"])
-
+    outlier_method = st.selectbox("Select Outlier Detection Method", ["IQR", "Z-Score", "Isolation Forest", "None"])
     df_outliers_removed = df.copy()
+    
     if outlier_method == "IQR":
         Q1 = df_outliers_removed[numeric_cols].quantile(0.25)
         Q3 = df_outliers_removed[numeric_cols].quantile(0.75)
@@ -157,21 +168,43 @@ def detect_outliers(df):
                     (df_outliers_removed[numeric_cols] > (Q3 + 1.5 * IQR))).any(axis=1)
         df_outliers_removed = df_outliers_removed[~outliers]
         st.write(f"Outliers removed using the IQR method. {outliers.sum()} rows removed.")
+    
+    elif outlier_method == "Z-Score":
+        z_scores = np.abs((df_outliers_removed[numeric_cols] - df_outliers_removed[numeric_cols].mean()) /
+                          df_outliers_removed[numeric_cols].std())
+        outliers = (z_scores > 3).any(axis=1)
+        df_outliers_removed = df_outliers_removed[~outliers]
+        st.write(f"Outliers removed using the Z-Score method. {outliers.sum()} rows removed.")
+    
+    elif outlier_method == "Isolation Forest":
+        iso = IsolationForest(contamination=0.1, random_state=42)
+        predictions = iso.fit_predict(df_outliers_removed[numeric_cols])
+        df_outliers_removed = df_outliers_removed[predictions == 1]
+        st.write("Outliers removed using Isolation Forest.")
+    
     else:
         st.write("No outlier removal applied.")
-
+    
     return df_outliers_removed
 
 # Encode categorical columns
 def encode_categorical(df):
     st.subheader("Encode Categorical Columns")
+    encoding_method = st.selectbox("Select Encoding Method", ["Label Encoding", "One-Hot Encoding"])
     label_encoders = {}
-    categorical_cols = df.select_dtypes(include=['object']).columns
-    for col in categorical_cols:
-        encoder = LabelEncoder()
-        df[col] = encoder.fit_transform(df[col])
-        label_encoders[col] = encoder
-    st.write("### Categorical columns encoded successfully.")
+    
+    if encoding_method == "Label Encoding":
+        categorical_cols = df.select_dtypes(include=['object']).columns
+        for col in categorical_cols:
+            encoder = LabelEncoder()
+            df[col] = encoder.fit_transform(df[col])
+            label_encoders[col] = encoder
+        st.write("### Categorical columns encoded using Label Encoding.")
+    
+    elif encoding_method == "One-Hot Encoding":
+        df = pd.get_dummies(df, drop_first=True)
+        st.write("### Categorical columns encoded using One-Hot Encoding.")
+    
     return df, label_encoders
 
 # PCA analysis
@@ -230,8 +263,13 @@ def build_ml_model(df, target_column):
         X_train = scaler.fit_transform(X_train)
         X_test = scaler.transform(X_test)
 
-    # Select task type: classification or regression
-    task_type = st.selectbox('Select Task Type:', ['classification', 'regression'])
+    # Automatically infer task type
+    if y.dtype == 'object' or len(y.unique()) <= 10:
+        task_type = 'classification'
+    else:
+        task_type = 'regression'
+
+    st.write(f"Task type inferred as: {task_type}")
 
     # Choose the model
     model_type = st.selectbox("Choose the model", [
@@ -289,12 +327,16 @@ def build_ml_model(df, target_column):
         model = StackingClassifier(estimators=base_estimators, final_estimator=LogisticRegression())
         st.write("Default Stacking Classifier configured with Logistic Regression as the meta-model.")
     elif model_type == "NLP Transformer":
-        try:
-            model = pipeline('text-classification', model='distilbert-base-uncased')
-        except Exception as e:
-            st.error(f"Error loading NLP transformer: {e}. Using default configuration.")
-            model = None
-        
+        if X.select_dtypes(include=['object']).shape[1] == 1:  # Ensure there is exactly one text column
+            try:
+                model = pipeline('text-classification', model='distilbert-base-uncased')
+                st.write("NLP Transformer initialized for text classification.")
+            except Exception as e:
+                st.error(f"Error loading NLP transformer: {e}. Using default configuration.")
+        else:
+            st.error("NLP Transformer is only suitable for datasets with one text column.")
+            return None, None
+
     if model is None:
         st.error("Invalid model type selected.")
         return None, None
@@ -373,20 +415,35 @@ def build_ml_model(df, target_column):
     y_pred = grid_search.predict(X_test)
 
     # Evaluate model performance
-    if task_type == 'classification':
-        accuracy = accuracy_score(y_test, y_pred)
-        cm = confusion_matrix(y_test, y_pred)
+    
+    if task_type == 'classification':        # Classification tasks
+        # Handle class imbalance using SMOTE
+        if st.checkbox("Handle imbalanced data?"):
+            from imblearn.over_sampling import SMOTE
+            smote = SMOTE(random_state=42)
+            X_train, y_train = smote.fit_resample(X_train, y_train)
+            st.write(f"SMOTE applied: New training set size - {X_train.shape[0]} samples.")
 
-        st.write(f"### Accuracy: {accuracy:.2f}")
+        # Evaluation Metrics
+        accuracy = accuracy_score(y_test, y_pred)
+        precision = classification_report(y_test, y_pred, output_dict=True)['weighted avg']['precision']
+        recall = classification_report(y_test, y_pred, output_dict=True)['weighted avg']['recall']
+        f1 = classification_report(y_test, y_pred, output_dict=True)['weighted avg']['f1-score']
         
+        # Display metrics
+        st.write(f"### Accuracy: {accuracy:.2f}")
+        st.write(f"### Precision: {precision:.2f}")
+        st.write(f"### Recall: {recall:.2f}")
+        st.write(f"### F1 Score: {f1:.2f}")
+
         # Classification Report
+        st.write("### Classification Report:")
         class_report = classification_report(y_test, y_pred, output_dict=True)
         class_report_df = pd.DataFrame(class_report).transpose()
-        
-        st.write("### Classification Report:")
         st.dataframe(class_report_df)
 
         # Confusion Matrix
+        cm = confusion_matrix(y_test, y_pred)
         st.write("### Confusion Matrix:")
         fig, ax = plt.subplots(figsize=(10, 8))
         sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", 
@@ -395,11 +452,55 @@ def build_ml_model(df, target_column):
         ax.set_ylabel("True Labels")
         st.pyplot(fig)
 
+        # ROC-AUC for classification tasks
+        if len(np.unique(y_test)) == 2:  # Binary classification
+            from sklearn.metrics import roc_auc_score, roc_curve
+            y_prob = grid_search.predict_proba(X_test)[:, 1]
+            roc_auc = roc_auc_score(y_test, y_prob)
+            fpr, tpr, _ = roc_curve(y_test, y_prob)
+
+            st.write(f"### ROC-AUC: {roc_auc:.2f}")
+            fig, ax = plt.subplots()
+            ax.plot(fpr, tpr, label=f"ROC Curve (AUC = {roc_auc:.2f})")
+            ax.plot([0, 1], [0, 1], linestyle='--', color='gray')
+            ax.set_title('Receiver Operating Characteristic Curve')
+            ax.set_xlabel('False Positive Rate')
+            ax.set_ylabel('True Positive Rate')
+            ax.legend()
+            st.pyplot(fig)
+
+        else:  # Multi-class classification
+            from sklearn.preprocessing import label_binarize
+            from sklearn.metrics import roc_curve, auc
+            y_test_bin = label_binarize(y_test, classes=np.unique(y_test))
+            y_prob = grid_search.predict_proba(X_test)
+            n_classes = y_test_bin.shape[1]
+
+            fpr, tpr, roc_auc = {}, {}, {}
+            for i in range(n_classes):
+                fpr[i], tpr[i], _ = roc_curve(y_test_bin[:, i], y_prob[:, i])
+                roc_auc[i] = auc(fpr[i], tpr[i])
+
+            fig, ax = plt.subplots(figsize=(10, 8))
+            for i in range(n_classes):
+                ax.plot(fpr[i], tpr[i], label=f"Class {i} (AUC = {roc_auc[i]:.2f})")
+            ax.plot([0, 1], [0, 1], linestyle='--', color='gray')
+            ax.set_title('Multi-Class Receiver Operating Characteristic Curve')
+            ax.set_xlabel('False Positive Rate')
+            ax.set_ylabel('True Positive Rate')
+            ax.legend()
+            st.pyplot(fig)
+
     else:  # Regression tasks
         mse = mean_squared_error(y_test, y_pred)
+        mae = mean_absolute_error(y_test, y_pred)
+        rmse = np.sqrt(mse)
         r2 = r2_score(y_test, y_pred)
 
-        st.write(f"### Mean Squared Error: {mse:.2f}")
+        # Display regression metrics
+        st.write(f"### Mean Squared Error (MSE): {mse:.2f}")
+        st.write(f"### Mean Absolute Error (MAE): {mae:.2f}")
+        st.write(f"### Root Mean Squared Error (RMSE): {rmse:.2f}")
         st.write(f"### R2 Score: {r2:.2f}")
 
         # Cross-validation score for better performance estimate
@@ -415,7 +516,7 @@ def build_ml_model(df, target_column):
         ax.set_ylabel('Predicted Values')
         ax.set_title('Actual vs Predicted')
         st.pyplot(fig)
-        
+
     return model, scaler
 
 # Prediction Function
@@ -435,7 +536,7 @@ def predict_new_data(model, input_data, label_encoders=None, scaler=None):
     return predictions
 
 def main():
-    st.title("Machine Learning Model Builder and Analyzer")
+    st.title("Comprehensive Data Analysis, Preprocessing, Machine Learning Model Building, and Prediction Platform with Interactive Visualization")
     uploaded_file = st.file_uploader("Upload your dataset (CSV)", type=["csv"])
     if uploaded_file is not None:
         df = load_data(uploaded_file)
