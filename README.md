@@ -1,7 +1,7 @@
 # Comprehensive Data Analysis, Preprocessing, Machine Learning Model Building, and Prediction Platform with Interactive Visualization
 
 ## Overview
-The **Machine Learning Model Builder and Analyzer** is an interactive Streamlit app that provides a comprehensive solution for analyzing datasets, preprocessing data, building machine learning models, and making predictions. It supports a wide range of preprocessing steps, including handling missing values, encoding categorical variables, detecting outliers, and applying feature scaling. The app also allows users to explore and visualize the data, including numeric and categorical features. After data preprocessing, users can build various machine learning models (classification and regression) and evaluate their performance.
+The **Comprehensive Data Analysis, Preprocessing, Machine Learning Model Building, and Prediction Platform with Interactive Visualization** is an interactive Streamlit app that provides a comprehensive solution for analyzing datasets, preprocessing data, building machine learning models, and making predictions. It supports a wide range of preprocessing steps, including handling missing values, encoding categorical variables, detecting outliers, and applying feature scaling. The app also allows users to explore and visualize the data, including numeric and categorical features. After data preprocessing, users can build various machine learning models (classification and regression) and evaluate their performance.
 
 ## Features
 - **Data Upload**: Upload a CSV file for analysis and model building.
