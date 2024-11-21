@@ -17,6 +17,8 @@ import catboost as cb
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
+from sklearn.ensemble import VotingClassifier, StackingClassifier
+from transformers import pipeline
 
 # Load the dataset
 def load_data(uploaded_file):
@@ -185,7 +187,23 @@ def pca_analysis(df):
     else:
         st.write("### PCA is not applicable. More than one numerical column is required.")
 
-# Build machine learning model
+def evaluate_with_cross_validation(model, X, y, task_type="classification"):
+    """
+    Perform cross-validation to evaluate model performance
+    """
+    if task_type == "classification":
+        scoring = 'accuracy'  # For classification tasks, use accuracy
+    else:
+        scoring = 'neg_mean_squared_error'  # For regression tasks, use negative MSE
+
+    # Perform cross-validation
+    cv_scores = cross_val_score(model, X, y, cv=5, scoring=scoring)
+    
+    # Output the results
+    st.write(f"Cross-validation scores: {cv_scores}")
+    st.write(f"Mean CV score: {cv_scores.mean():.2f}")
+    st.write(f"Standard deviation of CV scores: {cv_scores.std():.2f}")
+    
 def build_ml_model(df, target_column):
     # Split the data into features and target
     X = df.drop(columns=[target_column])
@@ -211,9 +229,10 @@ def build_ml_model(df, target_column):
 
     # Choose the model
     model_type = st.selectbox("Choose the model", [
-        "Random Forest", "SVM", "Decision Tree", "XGBoost", "KNN", "Logistic Regression", 
-        "Gradient Boosting", "Linear Regression", "Naive Bayes", "AdaBoost", "CatBoost", 
-        "LightGBM", "Ridge Regression", "Lasso Regression", "ElasticNet", "Neural Network"
+    "Random Forest", "SVM", "Decision Tree", "XGBoost", "KNN", "Logistic Regression", 
+    "Gradient Boosting", "Linear Regression", "Naive Bayes", "AdaBoost", "CatBoost", 
+    "LightGBM", "Ridge Regression", "Lasso Regression", "ElasticNet", "Neural Network",
+    "Voting Classifier", "Stacking Classifier", "NLP Transformer"
     ])
 
     model = None
@@ -249,6 +268,21 @@ def build_ml_model(df, target_column):
         model = ElasticNet()
     elif model_type == "Neural Network":
         model = MLPClassifier() if task_type == "classification" else MLPRegressor()
+    elif model_type == "Voting Classifier":
+        model = VotingClassifier(estimators=[
+            ('rf', RandomForestClassifier()), 
+            ('svc', SVC(probability=True)), 
+            ('gb', GradientBoostingClassifier())
+        ], voting='soft')
+    elif model_type == "Stacking Classifier":
+        model = StackingClassifier(estimators=[
+            ('rf', RandomForestClassifier()), 
+            ('svc', SVC(probability=True)), 
+            ('gb', GradientBoostingClassifier())
+        ], final_estimator=LogisticRegression())
+    elif model_type == "NLP Transformer":
+        st.warning("Using a pre-trained transformer model for text classification.")
+        model = pipeline('text-classification', model='distilbert-base-uncased')
         
     if model is None:
         st.error("Invalid model type selected.")
@@ -290,6 +324,22 @@ def build_ml_model(df, target_column):
             param_grid = {"alpha": [0.1, 1, 10], "l1_ratio": [0.1, 0.5, 0.9]}
         elif model_type == "Neural Network":
             param_grid = {"hidden_layer_sizes": [(50,), (100,)], "activation": ['relu', 'tanh']}
+        elif model_type == "Voting Classifier":
+            param_grid = {
+                "weights": [[1, 1, 1], [2, 1, 1], [1, 2, 1]],  # Weight combinations for rf, gb, svc
+                "voting": ["soft", "hard"]
+            }
+        elif model_type == "Stacking Classifier":
+            param_grid = {
+                "final_estimator": [LogisticRegression(), RandomForestClassifier()],
+                "cv": [3, 5]  # Cross-validation splitting strategy
+            }
+        elif model_type == "NLP Transformer":
+            param_grid = {
+                "learning_rate": [1e-5, 3e-5, 5e-5],
+                "num_train_epochs": [2, 3, 5],
+                "batch_size": [16, 32]
+            }
 
     grid_search = GridSearchCV(model, param_grid, cv=5)
 
@@ -304,6 +354,9 @@ def build_ml_model(df, target_column):
     
     # Display the best model
     st.write(f"### Best Model: {grid_search.best_estimator_}")
+    
+    # Evaluate with Cross-validation
+    evaluate_with_cross_validation(grid_search.best_estimator_, X_train, y_train, task_type)
 
     # Make predictions
     y_pred = grid_search.predict(X_test)
@@ -370,7 +423,6 @@ def predict_new_data(model, input_data, label_encoders=None, scaler=None):
     predictions = model.predict(input_data)
     return predictions
 
-# Streamlit integration for prediction
 def main():
     st.title("Machine Learning Model Builder and Analyzer")
     uploaded_file = st.file_uploader("Upload your dataset (CSV)", type=["csv"])
