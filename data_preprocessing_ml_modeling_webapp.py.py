@@ -29,6 +29,11 @@ import nltk
 nltk.download('punkt')
 nltk.download('stopwords')
 nltk.download('wordnet')
+import plotly.express as px
+from statsmodels.tsa.seasonal import seasonal_decompose
+from textblob import TextBlob
+import folium
+from streamlit_folium import folium_static
 import io
 import pickle
 
@@ -706,6 +711,79 @@ def load_pipeline():
     except Exception as e:
         st.error(f"Error loading pipeline: {e}")
         return None, None, None
+    
+def interactive_data_cleaning(df):
+    st.subheader("Interactive Data Cleaning")
+    
+    # Rename Columns
+    rename_cols = st.checkbox("Rename Columns?")
+    if rename_cols:
+        new_names = {}
+        for col in df.columns:
+            new_name = st.text_input(f"Rename {col}", col)
+            new_names[col] = new_name
+        df = df.rename(columns=new_names)
+    
+    # Drop Columns
+    drop_cols = st.multiselect("Select columns to drop", df.columns)
+    if drop_cols:
+        df = df.drop(columns=drop_cols)
+        st.write(f"Dropped columns: {drop_cols}")
+    
+    return df
+
+def interactive_visualizations(df):
+    st.subheader("Interactive Visualizations with Plotly")
+
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    categorical_cols = df.select_dtypes(include=['object']).columns
+
+    # Scatter Plot
+    if len(numeric_cols) > 1:
+        x_axis = st.selectbox("Select X-axis", numeric_cols)
+        y_axis = st.selectbox("Select Y-axis", numeric_cols)
+        fig = px.scatter(df, x=x_axis, y=y_axis, title="Scatter Plot")
+        st.plotly_chart(fig)
+
+    # Bar Plot
+    if len(categorical_cols) > 0:
+        cat_col = st.selectbox("Select Categorical Column for Bar Plot", categorical_cols)
+        fig = px.bar(df, x=cat_col, title="Bar Plot")
+        st.plotly_chart(fig)
+        
+def time_series_analysis(df, date_col):
+    st.subheader("Time-Series Analysis")
+    
+    # Seasonal Decomposition
+    st.write("Seasonality Decomposition:")
+    result = seasonal_decompose(df[date_col], model="additive", period=12)
+    fig = result.plot()
+    st.pyplot(fig)
+    
+def sentiment_analysis(df, text_column):
+    st.subheader("Sentiment Analysis")
+    
+    # Convert values to strings and handle NaN values
+    df[text_column] = df[text_column].fillna("").astype(str)
+    
+    # Apply sentiment analysis
+    sentiments = df[text_column].apply(lambda x: TextBlob(x).sentiment.polarity)
+    
+    # Add sentiment scores as a new column
+    df["Sentiment"] = sentiments
+    
+    # Display the dataframe with sentiment scores
+    st.write(df[["Sentiment"]])
+    
+def geospatial_visualization(df, lat_col, lon_col):
+    st.subheader("Geospatial Data Visualization")
+    
+    # Create Map
+    m = folium.Map(location=[df[lat_col].mean(), df[lon_col].mean()], zoom_start=10)
+    for _, row in df.iterrows():
+        folium.Marker(location=[row[lat_col], row[lon_col]]).add_to(m)
+
+    folium_static(m)
 
 def main():
     st.title("Comprehensive Data Analysis, Preprocessing, Machine Learning Model Building, and Prediction Platform with Interactive Visualization")
@@ -720,7 +798,10 @@ def main():
             basic_info(df)
             visualize_columns(df)
 
-            # Step 4: Preprocessing pipeline
+            # Step 4: Interactive Data Cleaning
+            df = interactive_data_cleaning(df)  # Allow user to rename or drop columns
+            
+            # Step 5: Preprocessing pipeline
             df = infer_and_correct_data_types(df)  # Infer and correct types
             df_cleaned = handle_missing_values(df)  # Handle missing values
             df_outliers_removed = detect_outliers(df_cleaned)  # Handle outliers
@@ -728,10 +809,19 @@ def main():
             df_encoded, label_encoders = encode_categorical(df_outliers_removed)  # Encode categorical variables
             df_encoded = handle_time_series(df_encoded)  # Process time-series columns
             
-            # Step 5: PCA Analysis
-            pca_analysis(df_encoded)
+            # Step 6: Interactive Visualizations (Plotly)
+            interactive_visualizations(df)  # Interactive charts
 
-            # Step 6: Target column selection
+            # Step 7: PCA Analysis
+            pca_analysis(df_encoded)
+            
+            # Step 8: Time-Series Analysis
+            # Check for datetime columns
+            date_cols = [col for col in df.columns if np.issubdtype(df[col].dtype, np.datetime64)]
+            if date_cols:
+                time_series_analysis(df, date_cols[0])  # Call time series analysis
+
+            # Step 9: Target column selection
             target_candidates = [
                 col for col in df_encoded.columns
                 if df_encoded[col].nunique() < 50 or df_encoded[col].dtype in ['int', 'float']
@@ -741,13 +831,13 @@ def main():
                 st.warning("No valid target column found. Please ensure your dataset contains suitable columns.")
                 return  # Exit if no target column is found
 
-            # Step 7: Build the model
+            # Step 9: Build the model
             model, scaler = build_ml_model(df_encoded, target_column)
             if model:
                 if st.checkbox("Save the model and pipeline?"):
                     save_pipeline(model, scaler, label_encoders)
 
-            # Step 8: Allow predictions on new data
+            # Step 10: Allow predictions on new data
             st.subheader("Make Predictions on New Data")
             new_data_file = st.file_uploader("Upload new data for prediction (CSV, Excel, JSON)", type=["csv", "xlsx", "json"])
             if new_data_file is not None:
@@ -763,6 +853,18 @@ def main():
                     st.write(predictions)
                 except Exception as e:
                     st.error(f"Error during prediction: {e}")
+
+            # Additional analyses (Sentiment Analysis, Geospatial)
+            st.subheader("Advanced Analyses")
+            
+            # Sentiment Analysis (for text columns)
+            text_column = st.selectbox("Select text column for sentiment analysis", df.columns)
+            if text_column:
+                sentiment_analysis(df, text_column)
+
+            # Geospatial Visualization (if latitude/longitude columns exist)
+            if 'latitude' in df.columns and 'longitude' in df.columns:
+                geospatial_visualization(df, 'latitude', 'longitude')
 
 if __name__ == "__main__":
     main()
