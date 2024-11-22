@@ -2,92 +2,50 @@
 
 ## Overview
 
-Comprehensive Data Analysis, Preprocessing, Machine Learning Model Building, and Prediction Platform with Interactive Visualization is a platform built using Python. It leverages popular libraries such as pandas, numpy, scikit-learn, Streamlit, and others to provide an interactive interface for data loading, preprocessing, visualization, model building, and evaluation.
+The **Comprehensive Data Analysis, Preprocessing, Machine Learning Model Building, and Prediction Platform with Interactive Visualization** is an interactive web-based application built using **Streamlit**. It provides end-to-end solutions for data preprocessing, visualization, and machine learning model building. This tool is designed for both beginners and advanced users, simplifying complex tasks in the machine learning pipeline.
 
 ## Features
-- **Data Loading and Basic Information**: Load CSV files and display basic information about the dataset, including the first few rows, summary statistics, and column types.
-- **Data Visualization**: Visualize numeric and categorical columns using histograms, KDE plots, box plots, correlation heatmaps, and pair plots.
-- **Missing Values Handling**: Handle missing values using various methods such as dropping rows, filling with mean, median, mode, or category-specific imputation.
-- **Outlier Detection**: Detect and remove outliers using methods like IQR, Z-Score, and Isolation Forest.
-- **Categorical Encoding**: Encode categorical columns using Label Encoding or One-Hot Encoding.
-- **PCA Analysis**: Perform Principal Component Analysis (PCA) for dimensionality reduction and visualize the first two principal components.
-- **Model Building and Evaluation**: Build and evaluate various machine learning models (e.g., Random Forest, SVM, Decision Tree, XGBoost, KNN, Logistic Regression, Gradient Boosting, etc.) with options for hyperparameter tuning.
-- **Text Preprocessing**: Preprocess text data for NLP tasks, including tokenization, stopword removal, and lemmatization.
-- **Interactive Streamlit Interface**: Provide an interactive interface for users to upload datasets, visualize data, handle missing values, detect outliers, encode categorical columns, perform PCA, build and evaluate models, and make predictions on new data.
-- **New Data Prediction**: Upload new data and generate predictions using the trained model, with support for preprocessing and feature scaling.
 
-## Installation
-To run this project, you need to have Python installed on your system. You can install the required libraries using the following command:
-```bash
-pip install pandas numpy streamlit scikit-learn xgboost lightgbm catboost seaborn matplotlib nltk transformers imblearn
-```
+### File Support
+- Supports **CSV**, **Excel**, and **JSON** file formats.
+- Automatic data type inference and correction for seamless integration.
 
-## Usage
-1. **Run the Streamlit App**:
-   ```bash
+### Data Preprocessing
+- **Missing Value Handling**: Options include dropping rows or filling with mean, median, or mode.
+- **Outlier Detection**: Detect outliers using IQR, Z-score, or Isolation Forest methods.
+- **Categorical Encoding**: Choose between **Label Encoding** or **One-Hot Encoding**.
+- **Feature Scaling**: Support for standard, min-max, and robust scalers.
+- **Time-Series Processing**: Automatically extracts year, month, and day features.
+
+### Data Visualization
+- **Numeric Columns**: Histogram, KDE, box plots, and pair plots.
+- **Categorical Columns**: Bar plots and count plots.
+- **Correlation Heatmaps**: Visualize relationships between numeric features.
+
+### Machine Learning
+- Supports both **Classification** and **Regression** tasks.
+- Choose from a variety of models:
+  - Random Forest, SVM, XGBoost, Neural Networks, Logistic Regression, and more.
+- **Hyperparameter Tuning**: Built-in grid search for optimization.
+- **Cross-Validation**: Evaluate models with 5-fold cross-validation.
+- **Class Imbalance Handling**: Leverage SMOTE for oversampling.
+
+### Model Evaluation
+- **Classification Metrics**: Accuracy, Precision, Recall, F1-Score, and Confusion Matrix.
+- **Regression Metrics**: MSE, RMSE, MAE, and R² Score.
+- **ROC-AUC**: Binary and multi-class ROC curves with AUC scores.
+
+### Advanced Features
+- **PCA**: Dimensionality reduction with 2D visualization.
+- **Text Preprocessing**: Tokenization, lemmatization, and stopword removal.
+- **NLP Transformers**: Support for text classification using pre-trained models (e.g., DistilBERT).
+
+### Save and Predict
+- Save trained models, scalers, and encoders for future use.
+- Upload new datasets for prediction with trained pipelines.
+
+## How to run it in your environment?
+
+   git clone https://github.com/your-username/file_name.git
+   pip install -r requirements.txt
    streamlit run file_name.py
-   ```
-
-2. **Upload Dataset**:
-   - Upload your dataset in CSV format using the file uploader.
-
-3. **Data Analysis and Preprocessing**:
-   - View basic information about the dataset.
-   - Visualize numeric and categorical columns.
-   - Handle missing values and detect outliers.
-   - Encode categorical columns and perform PCA analysis.
-
-4. **Model Building**:
-   - Select the target column and choose a machine learning model.
-   - Optionally, tune hyperparameters using GridSearchCV.
-   - Evaluate the model using cross-validation and various metrics.
-
-5. **Make Predictions**:
-   - Upload new data for prediction and view the predicted results.
-
-## New Data Prediction
-The Data Analyzer platform allows you to make predictions on new data using the trained model. Follow these steps to generate predictions:
-
-1. **Upload New Data**:
-   - Use the file uploader to upload a new dataset in CSV format.
-
-2. **View New Data**:
-   - The uploaded new data will be displayed for review.
-
-3. **Generate Predictions**:
-   - The platform will preprocess the new data, apply any necessary feature scaling, and generate predictions using the trained model.
-   - The predictions will be displayed in the interface.
-
-## Functions
-- `load_data(uploaded_file)`: Loads the dataset from a CSV file.
-- `basic_info(df)`: Displays basic information about the dataset.
-- `visualize_columns(df, max_categories=10, figsize=(12, 10), max_pairplot_cols=10)`: Visualizes numeric and categorical columns.
-- `handle_missing_values(df)`: Handles missing values using various methods.
-- `detect_outliers(df)`: Detects and removes outliers using different methods.
-- `encode_categorical(df)`: Encodes categorical columns using Label Encoding or One-Hot Encoding.
-- `pca_analysis(df)`: Performs PCA analysis and visualizes the first two principal components.
-- `evaluate_with_cross_validation(model, X, y, task_type="classification")`: Evaluates model performance using cross-validation.
-- `preprocess_text(text)`: Preprocesses text data for NLP tasks.
-- `build_ml_model(df, target_column)`: Builds and evaluates a machine learning model.
-- `predict_new_data(model, input_data, label_encoders=None, scaler=None)`: Generates predictions on new data.
-
-## Contributing
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-This project is licensed under the MIT License.
-
-## Acknowledgements
-- pandas
-- numpy
-- scikit-learn
-- Streamlit
-- xgboost
-- lightgbm
-- catboost
-- seaborn
-- matplotlib
-- nltk
-- transformers
-- imblearn
-- io
