@@ -14,6 +14,13 @@ The **Comprehensive Data Analysis, Preprocessing, Machine Learning Model Buildin
   - Detect and remove outliers using IQR, Z-Score, or Isolation Forest.
   - Encode categorical variables with Label Encoding or One-Hot Encoding.
   - Apply Principal Component Analysis (PCA) for dimensionality reduction.
+  - NLP Preprocessing:
+      Preprocess text data by:
+      Lowercasing.
+      Removing punctuation and special characters.
+      Tokenizing the text.
+      Removing stopwords.
+      Lemmatizing words to their base form.
 - **Model Building**: 
   - Automatically infer whether the task is classification or regression.
   - Choose from a wide range of machine learning algorithms, including:
