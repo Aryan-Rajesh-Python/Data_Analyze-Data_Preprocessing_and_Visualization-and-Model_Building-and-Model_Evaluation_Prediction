@@ -196,11 +196,11 @@ def detect_outliers(df):
         st.write(f"Outliers removed using the Z-Score method. {outliers.sum()} rows removed.")
     
     elif outlier_method == "Isolation Forest":
-        iso = IsolationForest(contamination=0.1, random_state=42)
+        iso = IsolationForest(contamination=0.1, random_state=42, n_jobs=-1)
         predictions = iso.fit_predict(df_outliers_removed[numeric_cols])
         df_outliers_removed = df_outliers_removed[predictions == 1]
-        st.write("Outliers removed using Isolation Forest.")
-    
+        st.write("Outliers removed using Isolation Forest with parallel processing.")
+
     else:
         st.write("No outlier removal applied.")
     
