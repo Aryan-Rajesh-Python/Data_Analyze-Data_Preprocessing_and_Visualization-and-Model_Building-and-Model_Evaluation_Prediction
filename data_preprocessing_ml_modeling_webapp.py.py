@@ -64,7 +64,7 @@ def basic_info(df):
     st.text(info)
     
 # Visualize columns
-def visualize_columns(df, max_categories=10, figsize=(12, 10)):
+def visualize_columns(df, max_categories=10, figsize=(12, 10), max_pairplot_cols=10):
     st.subheader("Column Visualizations")
     
     # Numeric Columns
@@ -73,7 +73,7 @@ def visualize_columns(df, max_categories=10, figsize=(12, 10)):
     for col in numeric_cols:
         fig, ax = plt.subplots(1, 2, figsize=(figsize[0]*1.5, figsize[1]))
         
-        # Histogram with larger size
+        # Histogram
         ax[0].hist(df[col], bins=20, color='skyblue', edgecolor='black')
         ax[0].set_title(f"Histogram of {col}")
         ax[0].set_xlabel(col)
@@ -93,20 +93,28 @@ def visualize_columns(df, max_categories=10, figsize=(12, 10)):
         fig, ax = plt.subplots(figsize=figsize)
         sns.boxplot(x=df[col], ax=ax)
         ax.set_title(f"Boxplot of {col}")
+        ax.set_xlabel(col)
         st.pyplot(fig)
 
     # Correlation Heatmap
-    st.write("### Correlation Heatmap for Numeric Columns:")
-    corr_matrix = df[numeric_cols].corr()
-    fig, ax = plt.subplots(figsize=(figsize[0]*1.5, figsize[1]*1.5))
-    sns.heatmap(corr_matrix, annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
-    st.pyplot(fig)
+    if len(numeric_cols) > 1:
+        st.write("### Correlation Heatmap for Numeric Columns:")
+        corr_matrix = df[numeric_cols].corr()
+        fig, ax = plt.subplots(figsize=(figsize[0]*1.5, figsize[1]*1.5))
+        sns.heatmap(corr_matrix, annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
+        ax.set_title("Correlation Heatmap")
+        st.pyplot(fig)
 
-    # Pair Plot (only for numeric columns)
+    # Pair Plot
     st.write("### Pair Plot (For Numeric Columns):")
-    pair_plot = sns.pairplot(df[numeric_cols])
-    pair_plot.fig.set_size_inches(figsize[0]*1.5, figsize[1]*1.5)
-    st.pyplot(pair_plot.fig)
+    if len(numeric_cols) > max_pairplot_cols:
+        st.warning(f"Too many numeric columns ({len(numeric_cols)}). Showing pair plot for the first {max_pairplot_cols} columns.")
+        numeric_cols = numeric_cols[:max_pairplot_cols]
+    if len(numeric_cols) > 1:
+        pair_plot = sns.pairplot(df[numeric_cols])
+        pair_plot.fig.suptitle("Pair Plot", y=1.02)  # Add a title
+        pair_plot.fig.set_size_inches(figsize[0]*1.5, figsize[1]*1.5)
+        st.pyplot(pair_plot.fig)
 
     # Categorical Columns Visualizations
     categorical_cols = df.select_dtypes(include=['object']).columns
@@ -128,8 +136,10 @@ def visualize_columns(df, max_categories=10, figsize=(12, 10)):
 
         # Count Plot
         fig, ax = plt.subplots(figsize=figsize)
-        sns.countplot(x=df_filtered[col], ax=ax)
+        sns.countplot(x=df_filtered[col], ax=ax, order=top_categories)
         ax.set_title(f"Countplot of {col}")
+        ax.set_xlabel(col)
+        ax.set_ylabel('Frequency')
         st.pyplot(fig)
 
 # Handle missing values
@@ -426,9 +436,12 @@ def build_ml_model(df, target_column):
             }
         elif model_type == "NLP Transformer":
             param_grid = {
-                "learning_rate": [1e-5, 3e-5, 5e-5],
-                "num_train_epochs": [2, 3, 5],
-                "batch_size": [16, 32]
+                "learning_rate": [1e-6, 1e-5, 3e-5, 5e-5, 1e-4],
+                "num_train_epochs": [2, 3, 4, 5, 6],
+                "batch_size": [8, 16, 32, 64],
+                "warmup_steps": [0, 500, 1000],
+                "weight_decay": [0.01, 0.1],
+                "adam_epsilon": [1e-8, 1e-5]
             }
 
     grid_search = GridSearchCV(model, param_grid, cv=5)
