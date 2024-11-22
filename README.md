@@ -46,6 +46,7 @@ The **Comprehensive Data Analysis, Preprocessing, Machine Learning Model Buildin
 
 ## How to run it in your environment?
 
+  ```bash
    git clone https://github.com/your-username/file_name.git
    pip install -r requirements.txt
    streamlit run file_name.py
