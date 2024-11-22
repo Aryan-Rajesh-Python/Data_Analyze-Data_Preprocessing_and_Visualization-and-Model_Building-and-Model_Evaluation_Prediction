@@ -25,6 +25,9 @@ The **Comprehensive Data Analysis, Preprocessing, Machine Learning Model Buildin
   - Automatically infer whether the task is classification or regression.
   - Choose from a wide range of machine learning algorithms, including:
     - Random Forest, XGBoost, LightGBM, CatBoost, SVM, Decision Tree, KNN, Logistic Regression, Gradient Boosting, AdaBoost, Naive Bayes, Neural Networks, and more.
+  - Apply NLP transformers (e.g., BERT, GPT) for advanced text-based tasks.
+  - Fine-tune transformer models for text classification, sentiment analysis, or other NLP tasks.
+  - Hyperparameter tuning for transformers, including learning rate, number of epochs, and batch size.
   - Hyperparameter tuning using GridSearchCV.
   - Cross-validation for model evaluation.
 - **Evaluation**: 
