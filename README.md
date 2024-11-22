@@ -25,7 +25,7 @@ pip install pandas numpy streamlit scikit-learn xgboost lightgbm catboost seabor
 ## Usage
 1. **Run the Streamlit App**:
    ```bash
-   streamlit run Data_Analyzer.py
+   streamlit run file_name.py
    ```
 
 2. **Upload Dataset**:
