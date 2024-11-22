@@ -1,4 +1,3 @@
-import io
 import pandas as pd
 import numpy as np
 import streamlit as st
@@ -21,6 +20,16 @@ from sklearn.decomposition import PCA
 from sklearn.ensemble import VotingClassifier, StackingClassifier
 from transformers import pipeline
 from sklearn.ensemble import IsolationForest
+from sklearn.metrics import precision_score, recall_score
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+from nltk.stem import WordNetLemmatizer
+import re
+import nltk
+nltk.download('punkt')
+nltk.download('stopwords')
+nltk.download('wordnet')
+import io
 
 # Load the dataset
 def load_data(uploaded_file):
@@ -243,6 +252,22 @@ def evaluate_with_cross_validation(model, X, y, task_type="classification"):
     st.write(f"Mean CV score: {cv_scores.mean():.2f}")
     st.write(f"Standard deviation of CV scores: {cv_scores.std():.2f}")
     
+def preprocess_text(text):
+    # Convert to lowercase
+    text = text.lower()
+    # Remove punctuation and special characters
+    text = re.sub(r'[^a-zA-Z\s]', '', text)
+    # Tokenize text
+    words = word_tokenize(text)
+    # Remove stopwords
+    stop_words = set(stopwords.words('english'))
+    words = [word for word in words if word not in stop_words]
+    # Lemmatize words
+    lemmatizer = WordNetLemmatizer()
+    words = [lemmatizer.lemmatize(word) for word in words]
+    # Rejoin words into a single string
+    return ' '.join(words)
+    
 def build_ml_model(df, target_column):
     # Split the data into features and target
     X = df.drop(columns=[target_column])
@@ -327,14 +352,26 @@ def build_ml_model(df, target_column):
         model = StackingClassifier(estimators=base_estimators, final_estimator=LogisticRegression())
         st.write("Default Stacking Classifier configured with Logistic Regression as the meta-model.")
     elif model_type == "NLP Transformer":
-        if X.select_dtypes(include=['object']).shape[1] == 1:  # Ensure there is exactly one text column
-            try:
-                model = pipeline('text-classification', model='distilbert-base-uncased')
-                st.write("NLP Transformer initialized for text classification.")
-            except Exception as e:
-                st.error(f"Error loading NLP transformer: {e}. Using default configuration.")
+        # Select the text column
+        text_columns = X.select_dtypes(include=['object']).columns
+        if len(text_columns) == 1:
+            text_column = text_columns[0]
+        elif len(text_columns) > 1:
+            text_column = st.selectbox("Select the text column for NLP tasks", text_columns)
         else:
-            st.error("NLP Transformer is only suitable for datasets with one text column.")
+            st.error("No text column found for NLP Transformer. Please ensure your dataset contains at least one text column.")
+            return None, None
+
+        # Apply preprocessing
+        st.write(f"Applying text preprocessing to the column: {text_column}")
+        X[text_column] = X[text_column].apply(preprocess_text)
+        
+        # Initialize the NLP model
+        try:
+            model = pipeline('text-classification', model='distilbert-base-uncased')
+            st.write("NLP Transformer initialized for text classification.")
+        except Exception as e:
+            st.error(f"Error loading NLP transformer: {e}. Using default configuration.")
             return None, None
 
     if model is None:
@@ -429,12 +466,16 @@ def build_ml_model(df, target_column):
         precision = classification_report(y_test, y_pred, output_dict=True)['weighted avg']['precision']
         recall = classification_report(y_test, y_pred, output_dict=True)['weighted avg']['recall']
         f1 = classification_report(y_test, y_pred, output_dict=True)['weighted avg']['f1-score']
+        precision_macro = precision_score(y_test, y_pred, average='macro')
+        recall_macro = recall_score(y_test, y_pred, average='macro')
         
         # Display metrics
         st.write(f"### Accuracy: {accuracy:.2f}")
         st.write(f"### Precision: {precision:.2f}")
         st.write(f"### Recall: {recall:.2f}")
         st.write(f"### F1 Score: {f1:.2f}")
+        st.write(f"### Macro-Average Precision: {precision_macro:.2f}")
+        st.write(f"### Macro-Average Recall: {recall_macro:.2f}")
 
         # Classification Report
         st.write("### Classification Report:")
