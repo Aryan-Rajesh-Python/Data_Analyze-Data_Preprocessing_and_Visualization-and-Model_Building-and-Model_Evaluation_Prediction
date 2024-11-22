@@ -30,23 +30,56 @@ nltk.download('punkt')
 nltk.download('stopwords')
 nltk.download('wordnet')
 import io
+import pickle
 
 # Load the dataset
 def load_data(uploaded_file):
+    """
+    Load dataset and handle multiple file formats (CSV, Excel, JSON).
+    Infer and correct data types automatically.
+    """
     try:
-        df = pd.read_csv(uploaded_file)
-        if df.empty:
-            st.error("Uploaded file is empty. Please upload a valid CSV file.")
+        # Load based on file extension
+        if uploaded_file.name.endswith('.csv'):
+            df = pd.read_csv(uploaded_file)
+        elif uploaded_file.name.endswith('.xlsx'):
+            df = pd.read_excel(uploaded_file)
+        elif uploaded_file.name.endswith('.json'):
+            df = pd.read_json(uploaded_file)
+        else:
+            st.error("Unsupported file format. Please upload CSV, Excel, or JSON files.")
             return None
+        
+        # Check for empty file
+        if df.empty:
+            st.error("Uploaded file is empty. Please upload a valid file.")
+            return None
+
+        # Infer and correct data types
+        df = infer_and_correct_data_types(df)
+        
         st.write(f"Data loaded successfully with {df.shape[0]} rows and {df.shape[1]} columns.")
         return df
-    except pd.errors.EmptyDataError:
-        st.error("The uploaded file is empty or not in CSV format. Please upload a valid CSV.")
-    except pd.errors.ParserError:
-        st.error("Error parsing the CSV file. Ensure it is properly formatted.")
     except Exception as e:
-        st.error(f"An unexpected error occurred: {e}")
-    return None
+        st.error(f"Error loading file: {e}")
+        return None
+
+def infer_and_correct_data_types(df):
+    """
+    Attempt to infer and correct data types in the dataframe.
+    Example: Convert date columns from object to datetime, etc.
+    """
+    for col in df.columns:
+        if df[col].dtype == 'object':
+            # Try converting to datetime
+            try:
+                df[col] = pd.to_datetime(df[col])
+            except ValueError:
+                pass  # If not a datetime column, skip
+        elif df[col].dtype == 'int64' or df[col].dtype == 'float64':
+            # Handle mixed-type numeric columns (e.g., containing NaNs as objects)
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+    return df
 
 # Basic info about the dataset
 def basic_info(df):
@@ -171,6 +204,17 @@ def handle_missing_values(df):
     st.write(f"### Missing values handled using {missing_method}.")
     return df_cleaned
 
+def handle_high_cardinality(df, max_categories=10):
+    """
+    Bucket rare categories for high-cardinality categorical columns.
+    """
+    categorical_cols = df.select_dtypes(include=['object']).columns
+    for col in categorical_cols:
+        if df[col].nunique() > max_categories:
+            top_categories = df[col].value_counts().nlargest(max_categories).index
+            df[col] = df[col].apply(lambda x: x if x in top_categories else 'Other')
+    return df
+
 # Detect outliers using IQR
 def detect_outliers(df):
     
@@ -244,6 +288,22 @@ def pca_analysis(df):
         st.pyplot(fig)
     else:
         st.write("### PCA is not applicable. More than one numerical column is required.")
+        
+def handle_time_series(df):
+    """
+    Detect and preprocess time-series data.
+    """
+    date_cols = [col for col in df.columns if np.issubdtype(df[col].dtype, np.datetime64)]
+    if date_cols:
+        st.write("### Detected Time-Series Columns:")
+        st.write(date_cols)
+        for col in date_cols:
+            df[f"{col}_year"] = df[col].dt.year
+            df[f"{col}_month"] = df[col].dt.month
+            df[f"{col}_day"] = df[col].dt.day
+            df.drop(columns=[col], inplace=True)
+        st.write("### Time-series columns transformed into year, month, day features.")
+    return df
 
 def evaluate_with_cross_validation(model, X, y, task_type="classification"):
     """
@@ -290,11 +350,21 @@ def build_ml_model(df, target_column):
     
     # Train-test split
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    
+    # Initialize scaler to None by default
+    scaler = None
 
     # Feature scaling for models that require it
-    scaler = None
     if st.selectbox('Do you want to scale features?', ['No', 'Yes']) == 'Yes':
-        scaler = StandardScaler()
+        scaler_option = st.selectbox("Choose a scaler", ["StandardScaler", "MinMaxScaler", "RobustScaler"])
+        if scaler_option == "StandardScaler":
+            scaler = StandardScaler()
+        elif scaler_option == "MinMaxScaler":
+            from sklearn.preprocessing import MinMaxScaler
+            scaler = MinMaxScaler()
+        elif scaler_option == "RobustScaler":
+            from sklearn.preprocessing import RobustScaler
+            scaler = RobustScaler()
         X_train = scaler.fit_transform(X_train)
         X_test = scaler.transform(X_test)
 
@@ -575,44 +645,118 @@ def build_ml_model(df, target_column):
 
 # Prediction Function
 def predict_new_data(model, input_data, label_encoders=None, scaler=None):
-    # Apply label encoding to categorical columns
-    if label_encoders:
-        for col, encoder in label_encoders.items():
-            if col in input_data.columns:
-                input_data[col] = encoder.transform(input_data[col].astype(str))
+    """
+    Generate predictions for new data using a trained model, with preprocessing.
+    """
+    try:
+        # Ensure input_data is a DataFrame
+        if not isinstance(input_data, pd.DataFrame):
+            raise ValueError("Input data must be a pandas DataFrame.")
 
-    # Apply feature scaling if a scaler was used
-    if scaler:
-        input_data = scaler.transform(input_data)
+        # Handle missing values in new data (default to mode or mean)
+        for col in input_data.columns:
+            if input_data[col].isnull().sum() > 0:
+                if input_data[col].dtype == 'object':
+                    input_data[col].fillna(input_data[col].mode()[0], inplace=True)
+                else:
+                    input_data[col].fillna(input_data[col].mean(), inplace=True)
 
-    # Generate predictions
-    predictions = model.predict(input_data)
-    return predictions
+        # Apply label encoding to categorical columns
+        if label_encoders:
+            for col, encoder in label_encoders.items():
+                if col in input_data.columns:
+                    input_data[col] = encoder.transform(input_data[col].astype(str))
+
+        # Apply feature scaling if a scaler was used during training
+        if scaler:
+            input_data = scaler.transform(input_data)
+
+        # Generate predictions
+        predictions = model.predict(input_data)
+
+        return predictions
+
+    except Exception as e:
+        raise ValueError(f"Error during prediction: {e}")
+
+def save_pipeline(model, scaler, label_encoders):
+    """
+    Save the model, scaler, and encoders for future predictions.
+    """
+    with open("model.pkl", "wb") as f:
+        pickle.dump(model, f)
+    with open("scaler.pkl", "wb") as f:
+        pickle.dump(scaler, f)
+    with open("label_encoders.pkl", "wb") as f:
+        pickle.dump(label_encoders, f)
+    st.success("Pipeline saved for future use.")
+
+def load_pipeline():
+    """
+    Load the saved model, scaler, and encoders.
+    """
+    try:
+        with open("model.pkl", "rb") as f:
+            model = pickle.load(f)
+        with open("scaler.pkl", "rb") as f:
+            scaler = pickle.load(f)
+        with open("label_encoders.pkl", "rb") as f:
+            label_encoders = pickle.load(f)
+        return model, scaler, label_encoders
+    except Exception as e:
+        st.error(f"Error loading pipeline: {e}")
+        return None, None, None
 
 def main():
     st.title("Comprehensive Data Analysis, Preprocessing, Machine Learning Model Building, and Prediction Platform with Interactive Visualization")
-    uploaded_file = st.file_uploader("Upload your dataset (CSV)", type=["csv"])
+    
+    # Step 1: File upload
+    uploaded_file = st.file_uploader("Upload your dataset (CSV, Excel, JSON)", type=["csv", "xlsx", "json"])
     if uploaded_file is not None:
+        # Step 2: Load data with type correction
         df = load_data(uploaded_file)
         if df is not None:
+            # Step 3: Basic info and visualization
             basic_info(df)
             visualize_columns(df)
-            df_cleaned = handle_missing_values(df)
-            df_outliers_removed = detect_outliers(df_cleaned)
-            df_encoded, label_encoders = encode_categorical(df_outliers_removed)
-            pca_analysis(df_encoded)
-            target_column = st.selectbox("Select the target column", df_encoded.columns)
-            model, scaler = build_ml_model(df_encoded, target_column)
+
+            # Step 4: Preprocessing pipeline
+            df = infer_and_correct_data_types(df)  # Infer and correct types
+            df_cleaned = handle_missing_values(df)  # Handle missing values
+            df_outliers_removed = detect_outliers(df_cleaned)  # Handle outliers
+            df_outliers_removed = handle_high_cardinality(df_outliers_removed)  # Handle high cardinality
+            df_encoded, label_encoders = encode_categorical(df_outliers_removed)  # Encode categorical variables
+            df_encoded = handle_time_series(df_encoded)  # Process time-series columns
             
-            # Allow user to upload new data for prediction
+            # Step 5: PCA Analysis
+            pca_analysis(df_encoded)
+
+            # Step 6: Target column selection
+            target_candidates = [
+                col for col in df_encoded.columns
+                if df_encoded[col].nunique() < 50 or df_encoded[col].dtype in ['int', 'float']
+            ]
+            target_column = st.selectbox("Select the target column", target_candidates)
+            if not target_column:
+                st.warning("No valid target column found. Please ensure your dataset contains suitable columns.")
+                return  # Exit if no target column is found
+
+            # Step 7: Build the model
+            model, scaler = build_ml_model(df_encoded, target_column)
+            if model:
+                if st.checkbox("Save the model and pipeline?"):
+                    save_pipeline(model, scaler, label_encoders)
+
+            # Step 8: Allow predictions on new data
             st.subheader("Make Predictions on New Data")
-            new_data_file = st.file_uploader("Upload new data for prediction (CSV)", type=["csv"])
+            new_data_file = st.file_uploader("Upload new data for prediction (CSV, Excel, JSON)", type=["csv", "xlsx", "json"])
             if new_data_file is not None:
-                new_data = pd.read_csv(new_data_file)
-                st.write("### New Data:")
-                st.dataframe(new_data)
-                
                 try:
+                    # Load new data
+                    new_data = load_data(new_data_file)
+                    st.write("### New Data:")
+                    st.dataframe(new_data)
+
                     # Make predictions
                     predictions = predict_new_data(model, new_data, label_encoders, scaler)
                     st.write("### Predictions:")
