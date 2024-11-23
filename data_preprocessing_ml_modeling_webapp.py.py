@@ -34,6 +34,10 @@ from statsmodels.tsa.seasonal import seasonal_decompose
 from textblob import TextBlob
 import folium
 from streamlit_folium import folium_static
+from statsmodels.tsa.arima.model import ARIMA
+from prophet import Prophet
+from sklearn.metrics.pairwise import cosine_similarity
+from folium.plugins import MarkerCluster
 import io
 import pickle
 
@@ -393,7 +397,7 @@ def build_ml_model(df, target_column):
     if model_type == "Random Forest":
         model = RandomForestClassifier() if task_type == "classification" else RandomForestRegressor()
     elif model_type == "SVM":
-        model = SVC() if task_type == "classification" else SVR()
+        model = SVC(probability=True) if task_type == "classification" else SVR()
     elif model_type == "Decision Tree":
         model = DecisionTreeClassifier() if task_type == "classification" else DecisionTreeRegressor()
     elif model_type == "XGBoost":
@@ -529,7 +533,7 @@ def build_ml_model(df, target_column):
     except Exception as e:
         st.error(f"An error occurred while fitting the model: {e}")
         return
-    
+
     # Display the best model
     st.write(f"### Best Model: {grid_search.best_estimator_}")
     
@@ -584,42 +588,66 @@ def build_ml_model(df, target_column):
         # ROC-AUC for classification tasks
         if len(np.unique(y_test)) == 2:  # Binary classification
             from sklearn.metrics import roc_auc_score, roc_curve
-            y_prob = grid_search.predict_proba(X_test)[:, 1]
-            roc_auc = roc_auc_score(y_test, y_prob)
-            fpr, tpr, _ = roc_curve(y_test, y_prob)
+            
+            try:
+                if hasattr(grid_search, 'predict_proba'):
+                    y_prob = grid_search.predict_proba(X_test)[:, 1]
+                elif hasattr(grid_search, 'decision_function'):
+                    y_prob = grid_search.decision_function(X_test)
+                else:
+                    raise AttributeError("Model does not support `predict_proba` or `decision_function`.")
+                
+                roc_auc = roc_auc_score(y_test, y_prob)
+                fpr, tpr, _ = roc_curve(y_test, y_prob)
 
-            st.write(f"### ROC-AUC: {roc_auc:.2f}")
-            fig, ax = plt.subplots()
-            ax.plot(fpr, tpr, label=f"ROC Curve (AUC = {roc_auc:.2f})")
-            ax.plot([0, 1], [0, 1], linestyle='--', color='gray')
-            ax.set_title('Receiver Operating Characteristic Curve')
-            ax.set_xlabel('False Positive Rate')
-            ax.set_ylabel('True Positive Rate')
-            ax.legend()
-            st.pyplot(fig)
+                st.write(f"### ROC-AUC: {roc_auc:.2f}")
+                fig, ax = plt.subplots()
+                ax.plot(fpr, tpr, label=f"ROC Curve (AUC = {roc_auc:.2f})")
+                ax.plot([0, 1], [0, 1], linestyle='--', color='gray')
+                ax.set_title('Receiver Operating Characteristic Curve')
+                ax.set_xlabel('False Positive Rate')
+                ax.set_ylabel('True Positive Rate')
+                ax.legend()
+                st.pyplot(fig)
+
+            except AttributeError as e:
+                st.error(f"ROC-AUC computation failed: {e}")
+            except Exception as e:
+                st.error(f"An unexpected error occurred: {e}")
 
         else:  # Multi-class classification
             from sklearn.preprocessing import label_binarize
             from sklearn.metrics import roc_curve, auc
-            y_test_bin = label_binarize(y_test, classes=np.unique(y_test))
-            y_prob = grid_search.predict_proba(X_test)
-            n_classes = y_test_bin.shape[1]
 
-            fpr, tpr, roc_auc = {}, {}, {}
-            for i in range(n_classes):
-                fpr[i], tpr[i], _ = roc_curve(y_test_bin[:, i], y_prob[:, i])
-                roc_auc[i] = auc(fpr[i], tpr[i])
+            try:
+                y_test_bin = label_binarize(y_test, classes=np.unique(y_test))
+                if hasattr(grid_search, 'predict_proba'):
+                    y_prob = grid_search.predict_proba(X_test)
+                else:
+                    raise AttributeError("Model does not support `predict_proba` for multi-class classification.")
 
-            fig, ax = plt.subplots(figsize=(10, 8))
-            for i in range(n_classes):
-                ax.plot(fpr[i], tpr[i], label=f"Class {i} (AUC = {roc_auc[i]:.2f})")
-            ax.plot([0, 1], [0, 1], linestyle='--', color='gray')
-            ax.set_title('Multi-Class Receiver Operating Characteristic Curve')
-            ax.set_xlabel('False Positive Rate')
-            ax.set_ylabel('True Positive Rate')
-            ax.legend()
-            st.pyplot(fig)
+                n_classes = y_test_bin.shape[1]
 
+                fpr, tpr, roc_auc = {}, {}, {}
+                for i in range(n_classes):
+                    fpr[i], tpr[i], _ = roc_curve(y_test_bin[:, i], y_prob[:, i])
+                    roc_auc[i] = auc(fpr[i], tpr[i])
+
+                fig, ax = plt.subplots(figsize=(10, 8))
+                for i in range(n_classes):
+                    ax.plot(fpr[i], tpr[i], label=f"Class {i} (AUC = {roc_auc[i]:.2f})")
+                ax.plot([0, 1], [0, 1], linestyle='--', color='gray')
+                ax.set_title('Multi-Class Receiver Operating Characteristic Curve')
+                ax.set_xlabel('False Positive Rate')
+                ax.set_ylabel('True Positive Rate')
+                ax.legend()
+                st.pyplot(fig)
+
+            except AttributeError as e:
+                st.error(f"ROC-AUC computation failed: {e}")
+            except Exception as e:
+                st.error(f"An unexpected error occurred: {e}")
+                
     else:  # Regression tasks
         mse = mean_squared_error(y_test, y_pred)
         mae = mean_absolute_error(y_test, y_pred)
@@ -775,19 +803,95 @@ def sentiment_analysis(df, text_column):
     # Display the dataframe with sentiment scores
     st.write(df[["Sentiment"]])
     
-def geospatial_visualization(df, lat_col, lon_col):
+def geospatial_visualization(df):
     st.subheader("Geospatial Data Visualization")
     
-    # Create Map
-    m = folium.Map(location=[df[lat_col].mean(), df[lon_col].mean()], zoom_start=10)
-    for _, row in df.iterrows():
-        folium.Marker(location=[row[lat_col], row[lon_col]]).add_to(m)
+    # Step 1: Dynamically select latitude and longitude columns
+    lat_col = st.selectbox("Select the Latitude column", df.columns)
+    lon_col = st.selectbox("Select the Longitude column", df.columns)
 
+    # Step 2: Error Handling
+    if lat_col is None or lon_col is None:
+        st.error("Please select valid Latitude and Longitude columns.")
+        return
+    if df[lat_col].isnull().any() or df[lon_col].isnull().any():
+        st.warning("Latitude or Longitude contains missing values. Dropping these rows.")
+        df = df.dropna(subset=[lat_col, lon_col])
+    if not np.issubdtype(df[lat_col].dtype, np.number) or not np.issubdtype(df[lon_col].dtype, np.number):
+        st.error("Latitude and Longitude must be numeric.")
+        return
+
+    # Step 3: Create Map
+    m = folium.Map(location=[df[lat_col].mean(), df[lon_col].mean()], zoom_start=10)
+
+    # Step 4: Add Markers with Popup Information
+    marker_cluster = MarkerCluster().add_to(m)
+    for _, row in df.iterrows():
+        popup_info = folium.Popup(f"<b>Details:</b><br>{row.to_dict()}", max_width=300)
+        folium.Marker(
+            location=[row[lat_col], row[lon_col]],
+            popup=popup_info,
+        ).add_to(marker_cluster)
+
+    # Step 5: Render the Map
     folium_static(m)
+    
+def detect_time_series_columns(df):
+    return [col for col in df.columns if pd.api.types.is_datetime64_any_dtype(df[col])]
+
+# Apply ARIMA model
+def apply_arima(df, time_col, target_col, steps=10):
+    df = df.sort_values(by=time_col)  # Ensure data is sorted
+    series = df[target_col]
+    model = ARIMA(series, order=(5, 1, 0))  # Default (p, d, q)
+    model_fit = model.fit()
+    forecast = model_fit.forecast(steps=steps)
+    return model_fit, forecast
+
+# Apply Prophet model
+def apply_prophet(df, time_col, target_col, steps=10):
+    df_prophet = df[[time_col, target_col]].rename(columns={time_col: "ds", target_col: "y"})
+    model = Prophet()
+    model.fit(df_prophet)
+    future = model.make_future_dataframe(periods=steps)
+    forecast = model.predict(future)
+    return model, forecast
+
+def build_recommendation_system(df):
+    st.subheader("Collaborative Filtering Recommendation System")
+    
+    # Step 1: Dynamically select user, item, and rating columns
+    user_col = st.selectbox("Select the User ID column", df.columns)
+    item_col = st.selectbox("Select the Item ID column", df.columns)
+    rating_col = st.selectbox("Select the Rating column", df.columns)
+    
+    if not user_col or not item_col or not rating_col:
+        st.warning("Please select valid columns for users, items, and ratings.")
+        return
+
+    # Step 2: Create a user-item matrix
+    user_item_matrix = df.pivot_table(index=user_col, columns=item_col, values=rating_col).fillna(0)
+    st.write("User-Item Matrix:")
+    st.dataframe(user_item_matrix)
+
+    # Step 3: Compute cosine similarity between items
+    item_similarity = cosine_similarity(user_item_matrix.T)  # Transpose for item-based similarity
+    item_similarity_df = pd.DataFrame(item_similarity, index=user_item_matrix.columns, columns=user_item_matrix.columns)
+
+    # Display similarity matrix
+    st.write("Item Similarity Matrix:")
+    st.dataframe(item_similarity_df)
+
+    # Step 4: Recommend items for a given item
+    selected_item = st.selectbox("Select an item to get recommendations", item_similarity_df.index)
+    if selected_item:
+        recommendations = item_similarity_df[selected_item].sort_values(ascending=False)[1:6]  # Top 5 similar items
+        st.write(f"Top Recommendations for '{selected_item}':")
+        st.write(recommendations)
 
 def main():
-    st.title("Comprehensive Data Analysis, Preprocessing, Machine Learning Model Building, and Prediction Platform with Interactive Visualization")
-    
+    st.title("Comprehensive Data Analysis and Machine Learning Platform with Interactive Visualization")
+
     # Step 1: File upload
     uploaded_file = st.file_uploader("Upload your dataset (CSV, Excel, JSON)", type=["csv", "xlsx", "json"])
     if uploaded_file is not None:
@@ -814,30 +918,53 @@ def main():
 
             # Step 7: PCA Analysis
             pca_analysis(df_encoded)
-            
+
             # Step 8: Time-Series Analysis
-            # Check for datetime columns
-            date_cols = [col for col in df.columns if np.issubdtype(df[col].dtype, np.datetime64)]
-            if date_cols:
-                time_series_analysis(df, date_cols[0])  # Call time series analysis
+            if time_series_cols := detect_time_series_columns(df):  # Detect time-series columns
+                st.subheader("Time-Series Analysis")
+                selected_time_col = st.selectbox("Select the Time-Series Column", time_series_cols)
+                target_variable = st.selectbox("Select the Target Variable for Forecasting", 
+                                               [col for col in df.columns if col != selected_time_col])
 
-            # Step 9: Target column selection
-            target_candidates = [
-                col for col in df_encoded.columns
-                if df_encoded[col].nunique() < 50 or df_encoded[col].dtype in ['int', 'float']
-            ]
-            target_column = st.selectbox("Select the target column", target_candidates)
-            if not target_column:
-                st.warning("No valid target column found. Please ensure your dataset contains suitable columns.")
-                return  # Exit if no target column is found
+                model_choice = st.selectbox("Select Time-Series Model", ["ARIMA", "Prophet"])
+                forecast_steps = st.slider("Select Number of Steps for Forecasting", 
+                                            min_value=5, max_value=50, value=10)
 
-            # Step 9: Build the model
+                if st.button("Run Time-Series Model"):
+                    if model_choice == "ARIMA":
+                        model_fit, forecast = apply_arima(df, selected_time_col, target_variable, steps=forecast_steps)
+                        st.write("### ARIMA Model Summary")
+                        st.text(model_fit.summary())
+                        st.write("### Forecasted Values")
+                        st.write(forecast)
+                        st.line_chart(forecast)
+
+                    elif model_choice == "Prophet":
+                        model, forecast = apply_prophet(df, selected_time_col, target_variable, steps=forecast_steps)
+                        st.write("### Prophet Forecast")
+                        st.write(forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]])
+                        
+                        # Plot Prophet results
+                        fig = px.line(forecast, x="ds", y="yhat", title="Prophet Forecast")
+                        fig.add_scatter(x=forecast["ds"], y=forecast["yhat_lower"], mode="lines", name="Lower Bound")
+                        fig.add_scatter(x=forecast["ds"], y=forecast["yhat_upper"], mode="lines", name="Upper Bound")
+                        st.plotly_chart(fig)
+
+            # Step 9: Target column selection for ML
+            target_column = st.selectbox("Select the Target Column for Machine Learning", df.columns)
+            # If a target column is selected, show a confirmation message
+            if target_column:
+                st.write(f"You have selected '{target_column}' as the target column for modeling.")
+            else:
+                st.warning("Please select a valid target column.")
+
+            # Step 10: Build and evaluate the model
             model, scaler = build_ml_model(df_encoded, target_column)
             if model:
-                if st.checkbox("Save the model and pipeline?"):
+                if st.checkbox("Save the Model and Pipeline"):
                     save_pipeline(model, scaler, label_encoders)
 
-            # Step 10: Allow predictions on new data
+            # Step 11: Make predictions on new data
             st.subheader("Make Predictions on New Data")
             new_data_file = st.file_uploader("Upload new data for prediction (CSV, Excel, JSON)", type=["csv", "xlsx", "json"])
             if new_data_file is not None:
@@ -854,17 +981,21 @@ def main():
                 except Exception as e:
                     st.error(f"Error during prediction: {e}")
 
-            # Additional analyses (Sentiment Analysis, Geospatial)
+            # Step 12: Advanced Analyses
             st.subheader("Advanced Analyses")
             
-            # Sentiment Analysis (for text columns)
-            text_column = st.selectbox("Select text column for sentiment analysis", df.columns)
+            # Sentiment Analysis
+            text_column = st.selectbox("Select Text Column for Sentiment Analysis", df.columns)
             if text_column:
                 sentiment_analysis(df, text_column)
 
-            # Geospatial Visualization (if latitude/longitude columns exist)
-            if 'latitude' in df.columns and 'longitude' in df.columns:
-                geospatial_visualization(df, 'latitude', 'longitude')
+            # Geospatial Visualization
+            if st.checkbox("Show Geospatial Visualization"):
+                geospatial_visualization(df)
+                
+            # Recommender Systems
+            if st.checkbox("Run Recommendation System"):
+                build_recommendation_system(df)
 
 if __name__ == "__main__":
     main()
