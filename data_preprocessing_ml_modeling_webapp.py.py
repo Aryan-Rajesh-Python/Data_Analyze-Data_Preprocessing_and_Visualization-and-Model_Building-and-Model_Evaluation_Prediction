@@ -519,7 +519,7 @@ def build_ml_model(df, target_column):
                 "adam_epsilon": [1e-8, 1e-5]
             }
 
-    grid_search = GridSearchCV(model, param_grid, cv=5)
+    grid_search = GridSearchCV(model, param_grid, cv=5, n_jobs=-1, verbose=1)
 
     try:
         # Fit the model and find the best parameters
