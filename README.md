@@ -50,6 +50,6 @@ The **Comprehensive Data Analysis, Preprocessing, Machine Learning Model Buildin
 ## How to run it in your environment?
 
   ```bash
-   git clone https://github.com/Aryan-Rajesh-Python/file_name.git
+   git clone https://github.com/Aryan-Rajesh-Python//data_preprocessing_ml_modeling_webapp.py.py.git
    pip install -r requirements.txt
-   streamlit run file_name.py
+   streamlit run /data_preprocessing_ml_modeling_webapp.py.py.py
