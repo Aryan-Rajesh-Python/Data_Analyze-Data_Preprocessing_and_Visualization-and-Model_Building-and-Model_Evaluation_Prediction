@@ -38,6 +38,8 @@ from statsmodels.tsa.arima.model import ARIMA
 from prophet import Prophet
 from sklearn.metrics.pairwise import cosine_similarity
 from folium.plugins import MarkerCluster
+from sklearn.preprocessing import LabelEncoder
+from category_encoders import TargetEncoder
 import io
 import pickle
 
@@ -888,6 +890,26 @@ def build_recommendation_system(df):
         recommendations = item_similarity_df[selected_item].sort_values(ascending=False)[1:6]  # Top 5 similar items
         st.write(f"Top Recommendations for '{selected_item}':")
         st.write(recommendations)
+        
+def encode_categorical(df, target_column):
+    label_encoders = {}
+    high_card_cols = [col for col in df.select_dtypes(include=['object']).columns if df[col].nunique() > 1000]
+
+    for col in high_card_cols:
+        # Apply Label Encoding to high cardinality columns
+        encoder = LabelEncoder()
+        df[col] = encoder.fit_transform(df[col].astype(str))  # Ensure the values are strings to handle mixed types
+        label_encoders[col] = encoder
+
+    # You may also want to encode other categorical columns (not just high-cardinality ones)
+    categorical_cols = df.select_dtypes(include=['object']).columns
+    for col in categorical_cols:
+        if col not in label_encoders:  # Avoid re-encoding already processed high-cardinality columns
+            encoder = LabelEncoder()
+            df[col] = encoder.fit_transform(df[col].astype(str))
+            label_encoders[col] = encoder
+
+    return df, label_encoders
 
 def main():
     st.title("Comprehensive Data Analysis and Machine Learning Platform with Interactive Visualization")
@@ -906,96 +928,107 @@ def main():
             df = interactive_data_cleaning(df)  # Allow user to rename or drop columns
             
             # Step 5: Preprocessing pipeline
-            df = infer_and_correct_data_types(df)  # Infer and correct types
-            df_cleaned = handle_missing_values(df)  # Handle missing values
-            df_outliers_removed = detect_outliers(df_cleaned)  # Handle outliers
-            df_outliers_removed = handle_high_cardinality(df_outliers_removed)  # Handle high cardinality
-            df_encoded, label_encoders = encode_categorical(df_outliers_removed)  # Encode categorical variables
-            df_encoded = handle_time_series(df_encoded)  # Process time-series columns
+            # Infer and correct data types
+            df = infer_and_correct_data_types(df)  
             
-            # Step 6: Interactive Visualizations (Plotly)
-            interactive_visualizations(df)  # Interactive charts
-
-            # Step 7: PCA Analysis
-            pca_analysis(df_encoded)
-
-            # Step 8: Time-Series Analysis
-            if time_series_cols := detect_time_series_columns(df):  # Detect time-series columns
-                st.subheader("Time-Series Analysis")
-                selected_time_col = st.selectbox("Select the Time-Series Column", time_series_cols)
-                target_variable = st.selectbox("Select the Target Variable for Forecasting", 
-                                               [col for col in df.columns if col != selected_time_col])
-
-                model_choice = st.selectbox("Select Time-Series Model", ["ARIMA", "Prophet"])
-                forecast_steps = st.slider("Select Number of Steps for Forecasting", 
-                                            min_value=5, max_value=50, value=10)
-
-                if st.button("Run Time-Series Model"):
-                    if model_choice == "ARIMA":
-                        model_fit, forecast = apply_arima(df, selected_time_col, target_variable, steps=forecast_steps)
-                        st.write("### ARIMA Model Summary")
-                        st.text(model_fit.summary())
-                        st.write("### Forecasted Values")
-                        st.write(forecast)
-                        st.line_chart(forecast)
-
-                    elif model_choice == "Prophet":
-                        model, forecast = apply_prophet(df, selected_time_col, target_variable, steps=forecast_steps)
-                        st.write("### Prophet Forecast")
-                        st.write(forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]])
-                        
-                        # Plot Prophet results
-                        fig = px.line(forecast, x="ds", y="yhat", title="Prophet Forecast")
-                        fig.add_scatter(x=forecast["ds"], y=forecast["yhat_lower"], mode="lines", name="Lower Bound")
-                        fig.add_scatter(x=forecast["ds"], y=forecast["yhat_upper"], mode="lines", name="Upper Bound")
-                        st.plotly_chart(fig)
-
-            # Step 9: Target column selection for ML
+            # Handle missing values
+            df_cleaned = handle_missing_values(df)
+            
+            # Handle outliers
+            df_outliers_removed = detect_outliers(df_cleaned)
+            
+            # Handle high cardinality categorical columns
+            df_outliers_removed = handle_high_cardinality(df_outliers_removed)  
+            
+            # Encode categorical columns (including handling unseen values)
             target_column = st.selectbox("Select the Target Column for Machine Learning", df.columns)
-            # If a target column is selected, show a confirmation message
             if target_column:
-                st.write(f"You have selected '{target_column}' as the target column for modeling.")
-            else:
-                st.warning("Please select a valid target column.")
-
-            # Step 10: Build and evaluate the model
-            model, scaler = build_ml_model(df_encoded, target_column)
-            if model:
-                if st.checkbox("Save the Model and Pipeline"):
-                    save_pipeline(model, scaler, label_encoders)
-
-            # Step 11: Make predictions on new data
-            st.subheader("Make Predictions on New Data")
-            new_data_file = st.file_uploader("Upload new data for prediction (CSV, Excel, JSON)", type=["csv", "xlsx", "json"])
-            if new_data_file is not None:
-                try:
-                    # Load new data
-                    new_data = load_data(new_data_file)
-                    st.write("### New Data:")
-                    st.dataframe(new_data)
-
-                    # Make predictions
-                    predictions = predict_new_data(model, new_data, label_encoders, scaler)
-                    st.write("### Predictions:")
-                    st.write(predictions)
-                except Exception as e:
-                    st.error(f"Error during prediction: {e}")
-
-            # Step 12: Advanced Analyses
-            st.subheader("Advanced Analyses")
-            
-            # Sentiment Analysis
-            text_column = st.selectbox("Select Text Column for Sentiment Analysis", df.columns)
-            if text_column:
-                sentiment_analysis(df, text_column)
-
-            # Geospatial Visualization
-            if st.checkbox("Show Geospatial Visualization"):
-                geospatial_visualization(df)
+                df_encoded, label_encoders = encode_categorical(df_outliers_removed, target_column)  # Pass target column for encoding
                 
-            # Recommender Systems
-            if st.checkbox("Run Recommendation System"):
-                build_recommendation_system(df)
+                # Handle time-series columns (if any)
+                df_encoded = handle_time_series(df_encoded)
+
+                # Step 6: Interactive Visualizations (Plotly)
+                interactive_visualizations(df)
+
+                # Step 7: PCA Analysis
+                pca_analysis(df_encoded)
+
+                # Step 8: Time-Series Analysis
+                if time_series_cols := detect_time_series_columns(df):  # Detect time-series columns
+                    st.subheader("Time-Series Analysis")
+                    selected_time_col = st.selectbox("Select the Time-Series Column", time_series_cols)
+                    target_variable = st.selectbox("Select the Target Variable for Forecasting", 
+                                                   [col for col in df.columns if col != selected_time_col])
+
+                    model_choice = st.selectbox("Select Time-Series Model", ["ARIMA", "Prophet"])
+                    forecast_steps = st.slider("Select Number of Steps for Forecasting", 
+                                                min_value=5, max_value=50, value=10)
+
+                    if st.button("Run Time-Series Model"):
+                        if model_choice == "ARIMA":
+                            model_fit, forecast = apply_arima(df, selected_time_col, target_variable, steps=forecast_steps)
+                            st.write("### ARIMA Model Summary")
+                            st.text(model_fit.summary())
+                            st.write("### Forecasted Values")
+                            st.write(forecast)
+                            st.line_chart(forecast)
+
+                        elif model_choice == "Prophet":
+                            model, forecast = apply_prophet(df, selected_time_col, target_variable, steps=forecast_steps)
+                            st.write("### Prophet Forecast")
+                            st.write(forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]])
+                            
+                            # Plot Prophet results
+                            fig = px.line(forecast, x="ds", y="yhat", title="Prophet Forecast")
+                            fig.add_scatter(x=forecast["ds"], y=forecast["yhat_lower"], mode="lines", name="Lower Bound")
+                            fig.add_scatter(x=forecast["ds"], y=forecast["yhat_upper"], mode="lines", name="Upper Bound")
+                            st.plotly_chart(fig)
+
+                # Step 9: Machine Learning Model Building
+                if target_column:
+                    st.write(f"You have selected '{target_column}' as the target column for modeling.")
+                else:
+                    st.warning("Please select a valid target column.")
+                
+                # Build and evaluate the model
+                model, scaler = build_ml_model(df_encoded, target_column)
+                if model:
+                    if st.checkbox("Save the Model and Pipeline"):
+                        save_pipeline(model, scaler, label_encoders)
+
+                # Step 10: Make predictions on new data
+                st.subheader("Make Predictions on New Data")
+                new_data_file = st.file_uploader("Upload new data for prediction (CSV, Excel, JSON)", type=["csv", "xlsx", "json"])
+                if new_data_file is not None:
+                    try:
+                        # Load new data
+                        new_data = load_data(new_data_file)
+                        st.write("### New Data:")
+                        st.dataframe(new_data)
+
+                        # Make predictions
+                        predictions = predict_new_data(model, new_data, label_encoders, scaler)
+                        st.write("### Predictions:")
+                        st.write(predictions)
+                    except Exception as e:
+                        st.error(f"Error during prediction: {e}")
+
+                # Step 11: Advanced Analyses
+                st.subheader("Advanced Analyses")
+
+                # Sentiment Analysis
+                text_column = st.selectbox("Select Text Column for Sentiment Analysis", df.columns)
+                if text_column:
+                    sentiment_analysis(df, text_column)
+
+                # Geospatial Visualization
+                if st.checkbox("Show Geospatial Visualization"):
+                    geospatial_visualization(df)
+                    
+                # Recommender Systems
+                if st.checkbox("Run Recommendation System"):
+                    build_recommendation_system(df)
 
 if __name__ == "__main__":
     main()
